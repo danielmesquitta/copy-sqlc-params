@@ -28,7 +28,7 @@ func CopySQLCParams(
 	outputFilePath := filepath.Join(outputFolder, outputFile)
 
 	// Prepare to write to the output file
-	outFile, err := os.Create(outputFilePath)
+	outFile, err := os.Open(outputFilePath)
 	if err != nil {
 		return "", fmt.Errorf("error creating output file: %w\n", err)
 	}
