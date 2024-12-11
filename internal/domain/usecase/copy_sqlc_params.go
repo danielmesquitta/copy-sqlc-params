@@ -27,26 +27,21 @@ func CopySQLCParams(
 	outputFile := "params_gen.go"
 	outputFilePath := filepath.Join(outputFolder, outputFile)
 
-	// Prepare to write to the output file
-	outFile, err := os.Open(outputFilePath)
-	if err != nil {
-		return "", fmt.Errorf("error creating output file: %w\n", err)
-	}
-	defer outFile.Close()
+	var result strings.Builder
 
-	writer := bufio.NewWriter(outFile)
-	defer writer.Flush()
-
-	// Write package declaration to the output file
-	if _, err := writer.WriteString(fmt.Sprintf("package %s\n\n", packageName)); err != nil {
-		return "", fmt.Errorf("error writing to file: %w\n", err)
-	}
+	// Write package declaration
+	result.WriteString(
+		fmt.Sprintf(
+			"//nolint\n//go:build !codeanalysis\n// +build !codeanalysis\n\npackage %s\n\n",
+			packageName,
+		),
+	)
 
 	// Check for models.go file and copy its imports
 	modelsFile := filepath.Join(inputFolder, "models.go")
 	if _, err := os.Stat(modelsFile); err == nil {
-		if err := copyImports(modelsFile, writer); err != nil {
-			return "", fmt.Errorf("error copying imports: %w\n", err)
+		if err := copyImports(modelsFile, &result); err != nil {
+			return "", fmt.Errorf("error copying imports: %w", err)
 		}
 	}
 
@@ -55,7 +50,7 @@ func CopySQLCParams(
 	structEndRegex := regexp.MustCompile(`^}`)
 
 	// Walk through the files in the input folder
-	err = filepath.Walk(
+	err := filepath.Walk(
 		inputFolder,
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -63,8 +58,8 @@ func CopySQLCParams(
 			}
 			// Process only .go files
 			if !info.IsDir() && strings.HasSuffix(info.Name(), ".go") {
-				if err := processFile(path, structStartRegex, structEndRegex, writer); err != nil {
-					return fmt.Errorf("error processing file: %w\n", err)
+				if err := processFile(path, structStartRegex, structEndRegex, &result); err != nil {
+					return fmt.Errorf("error processing file: %w", err)
 				}
 			}
 			return nil
@@ -72,20 +67,29 @@ func CopySQLCParams(
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("error reading folder: %w\n", err)
+		return "", fmt.Errorf("error reading folder: %w", err)
+	}
+
+	// Write the collected content to the output file
+	if err := os.MkdirAll(outputFolder, os.ModePerm); err != nil {
+		return "", fmt.Errorf("error creating output directory: %w", err)
+	}
+
+	if err := os.WriteFile(outputFilePath, []byte(result.String()), 0644); err != nil {
+		return "", fmt.Errorf("error writing to file: %w", err)
 	}
 
 	if err := formatGoFile(outputFilePath); err != nil {
-		return "", fmt.Errorf("error formatting file: %w\n", err)
+		return "", fmt.Errorf("error formatting file: %w", err)
 	}
 
 	return outputFilePath, nil
 }
 
-func copyImports(filePath string, writer *bufio.Writer) error {
+func copyImports(filePath string, result *strings.Builder) error {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("error opening file %s: %w\n", filePath, err)
+		return fmt.Errorf("error opening file %s: %w", filePath, err)
 	}
 	defer file.Close()
 
@@ -97,16 +101,12 @@ func copyImports(filePath string, writer *bufio.Writer) error {
 
 		if strings.HasPrefix(line, "import (") {
 			importsStarted = true
-			if _, err := writer.WriteString(line + "\n"); err != nil {
-				return fmt.Errorf("error writing to file: %w\n", err)
-			}
+			result.WriteString(line + "\n")
 			continue
 		}
 
 		if importsStarted {
-			if _, err := writer.WriteString(line + "\n"); err != nil {
-				return fmt.Errorf("error writing to file: %w\n", err)
-			}
+			result.WriteString(line + "\n")
 			if strings.HasPrefix(line, ")") {
 				break
 			}
@@ -114,13 +114,11 @@ func copyImports(filePath string, writer *bufio.Writer) error {
 	}
 
 	if importsStarted {
-		if _, err := writer.WriteString("\n"); err != nil {
-			return fmt.Errorf("error writing to file: %w\n", err)
-		}
+		result.WriteString("\n")
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading file %s: %v\n", filePath, err)
+		return fmt.Errorf("error reading file %s: %v", filePath, err)
 	}
 
 	return nil
@@ -129,11 +127,11 @@ func copyImports(filePath string, writer *bufio.Writer) error {
 func processFile(
 	filePath string,
 	structStartRegex, structEndRegex *regexp.Regexp,
-	writer *bufio.Writer,
+	result *strings.Builder,
 ) error {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("error opening file %s: %v\n", filePath, err)
+		return fmt.Errorf("error opening file %s: %v", filePath, err)
 	}
 	defer file.Close()
 
@@ -146,10 +144,8 @@ func processFile(
 		if capturing {
 			buffer = append(buffer, line)
 			if structEndRegex.MatchString(line) {
-				// Write the captured struct to the output file
-				if _, err := writer.WriteString(strings.Join(buffer, "\n") + "\n\n"); err != nil {
-					return fmt.Errorf("error writing to file: %w\n", err)
-				}
+				// Write the captured struct to the result
+				result.WriteString(strings.Join(buffer, "\n") + "\n\n")
 				buffer = nil
 				capturing = false
 			}
@@ -163,7 +159,7 @@ func processFile(
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading file %s: %v\n", filePath, err)
+		return fmt.Errorf("error reading file %s: %v", filePath, err)
 	}
 
 	return nil
