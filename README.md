@@ -2,6 +2,8 @@
 
 Copy SQLC params to a different package
 
+I like using the repository pattern, but unfortunately, in Go, you often have to duplicate code to maintain clean architecture. Fortunately, with the [jinzhu/copier](https://github.com/jinzhu/copier) package and this CLI code generation tool, I can streamline this process effectively. If you're curious about my approach, feel free to explore my [api-finance-manager](https://github.com/danielmesquitta/api-finance-manager) repository to see the implementation in action.
+
 ## Installation
 
 ```bash
